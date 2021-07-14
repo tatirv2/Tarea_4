@@ -1,0 +1,106 @@
+---
+title: "Registro de Orquideas y Areas Silvestres Protegidas"
+author: "Tatiana Ramirez"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(sf)
+library(raster)
+library(dplyr)
+library(spData)
+library(leaflet)
+library(plotly)
+library(DT)
+library(tidyr)
+
+orc <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/gbif/orchidaceae-cr-registros.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude",
+      "Y_POSSIBLE_NAMES=decimalLatitude"
+    ),
+    quiet = TRUE
+  )
+
+areassp <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/sinac/asp/asp-wgs84.geojson",
+    quiet = TRUE
+  )
+
+st_crs(areassp) = 4326
+st_crs(orc) = 4326
+```
+
+## Limpieza de datos
+
+```{r message=FALSE, warning=FALSE}
+orc$species[orc$species == ""] <- "Eliminar"
+
+orc <- orc %>%
+  filter(!is.na(coordinateUncertaintyInMeters) &
+           coordinateUncertaintyInMeters <= 1000) %>%
+  filter(species != "Eliminar")
+
+areassp <- areassp %>%
+  filter(descripcio != "Area Marina de Manejo" &
+           descripcio != "Area marina protegida")
+
+asp_registros <-
+  areassp %>%
+  st_join(orc) %>%
+  group_by(nombre_asp) %>%
+  summarize(especies = n_distinct(species, na.rm = TRUE))
+```
+
+## Asignacion de colores 
+
+```{r message=FALSE, warning=FALSE}
+  col_r <-
+  colorNumeric(palette = "Purples",
+               domain = asp_registros$especies,
+               na.color = "transparent")
+```
+
+## Mapa leaflet
+
+```{r message=FALSE, warning=FALSE}
+leaflet() %>%
+  addTiles(group = "OSM") %>%
+  addPolygons(
+    data = asp_registros,
+    fillColor = ~ col_r(asp_registros$especies),
+    fillOpacity = 0.7,
+    stroke = TRUE,
+    color = "black",
+    weight = 1,
+    popup = paste(
+      paste("<strong>Areas silvestres:</strong>",
+            asp_registros$nombre_asp),
+      paste(
+        "<strong>Cantidad de especies:</strong>",
+        asp_registros$especies
+        
+      ),
+      sep = '<br/>'
+    ),
+    group = "Areas silvestres y especies"
+  ) %>%
+  addLayersControl(baseGroups = c("OSM"),
+                   overlayGroups = c("Areas silvestres y especies")) %>%
+  addLegend(
+    position = "bottomleft",
+    pal = col_r,
+    values = asp_registros$especies,
+    group = "Areas silvestres y especies",
+    title = "Orquideas"
+  )  
+```
+
